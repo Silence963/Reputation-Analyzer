@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import CompanySearch from "./CompanySearch";
 import SentimentChart from "./SentimentChart";
 import ReviewList from "./ReviewList";
@@ -23,6 +23,9 @@ import {
 } from "@mui/material";
 
 export default function Dashboard() {
+  // Extract userid and firmid from URL parameters
+  const [userId, setUserId] = useState(null);
+  const [firmId, setFirmId] = useState(null);
   const [chartData, setChartData] = useState(null);
   const [topReviews, setTopReviews] = useState(null);
   const [llmSummary, setLlmSummary] = useState("");
@@ -35,6 +38,20 @@ export default function Dashboard() {
   const [analysisMetadata, setAnalysisMetadata] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [sentimentFilter, setSentimentFilter] = useState(['positive', 'neutral', 'negative']);
+
+  // Parse URL parameters on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const userIdParam = urlParams.get('userid');
+    const firmIdParam = urlParams.get('firmid');
+    
+    if (userIdParam) {
+      setUserId(parseInt(userIdParam));
+    }
+    if (firmIdParam) {
+      setFirmId(parseInt(firmIdParam));
+    }
+  }, []);
 
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return "N/A";
@@ -152,6 +169,13 @@ export default function Dashboard() {
         {activeProvider && (
           <Alert severity="info" sx={{ mb: 2 }}>
             Using AI Provider: <strong>{activeProvider.provider}</strong> (User: {activeProvider.userId}, Firm: {activeProvider.firmId})
+          </Alert>
+        )}
+        
+        {/* Display warning if userid or firmid is missing */}
+        {(!userId || !firmId) && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Missing URL parameters. Please access the page with: <code>?userid=YOUR_USER_ID&firmid=YOUR_FIRM_ID</code>
           </Alert>
         )}
         
@@ -417,8 +441,8 @@ export default function Dashboard() {
         <ApiKeyManager
           onProviderSelect={handleProviderSelect}
           onClose={() => setShowApiManager(false)}
-          currentUserId={1481}
-          currentFirmId={2}
+          currentUserId={userId}
+          currentFirmId={firmId}
         />
       )}
     </>

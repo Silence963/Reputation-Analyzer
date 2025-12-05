@@ -32,7 +32,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
   TrendingUp as TrendingUpIcon,
-  Edit as EditIcon,
   ContentCopy as CopyIcon
 } from '@mui/icons-material';
 

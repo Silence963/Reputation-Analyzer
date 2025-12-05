@@ -17,12 +17,8 @@ import {
 import {
   Warning as WarningIcon,
   TrendingDown as TrendingDownIcon,
-  TrendingUp as TrendingUpIcon,
   CheckCircle as CheckCircleIcon,
-  Schedule as ScheduleIcon,
-  Analytics as AnalyticsIcon,
   Business as BusinessIcon,
-  Feedback as FeedbackIcon,
   Assessment as AssessmentIcon
 } from '@mui/icons-material';
 

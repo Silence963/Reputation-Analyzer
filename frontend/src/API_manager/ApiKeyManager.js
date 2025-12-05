@@ -99,13 +99,9 @@ const ApiKeyManager = ({
   currentFirmId,
   apiBaseUrl = "http://localhost:8000" 
 }) => {
-  const HARD_USER_ID = 1481;
-  const HARD_FIRM_ID = 2;
-  // State is now hardcoded to HARD_USER_ID and HARD_FIRM_ID
-
   const [apiKey, setApiKey] = useState("");
-  const [userId, setUserId] = useState(HARD_USER_ID);
-  const [firmId, setFirmId] = useState(HARD_FIRM_ID);
+  const [userId, setUserId] = useState(currentUserId);
+  const [firmId, setFirmId] = useState(currentFirmId);
   const [selectedCategory, setSelectedCategory] = useState("");
   const [llmProvider, setLlmProvider] = useState("");
   const [message, setMessage] = useState(null);
@@ -114,18 +110,18 @@ const ApiKeyManager = ({
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Persist userId and firmId to localStorage when they change
-  // IDs are hardcoded; no persistence needed
-
-  // Update local state when props change (only if not already set from localStorage)
-  // Ignore incoming props for IDs; always use hardcoded values
+  // Update local state when props change
   useEffect(() => {
-    setUserId(HARD_USER_ID);
-    setFirmId(HARD_FIRM_ID);
-  }, []);
+    if (currentUserId) {
+      setUserId(currentUserId);
+    }
+    if (currentFirmId) {
+      setFirmId(currentFirmId);
+    }
+  }, [currentUserId, currentFirmId]);
 
   const fetchLLMDetails = useCallback(async () => {
-    if (!HARD_USER_ID || !HARD_FIRM_ID) {
+    if (!userId || !firmId) {
       setError("User ID and Firm ID are required.");
       return;
     }
@@ -140,7 +136,7 @@ const ApiKeyManager = ({
       
       console.log(`📡 Fetching LLM details for User: ${userId}, Firm: ${firmId}`);
       const response = await axios.get(`${apiBaseUrl}/llm-details`, {
-        params: { userid: HARD_USER_ID, firmid: HARD_FIRM_ID },
+        params: { userid: userId, firmid: firmId },
         timeout: 10000
       });
       
@@ -172,8 +168,8 @@ const ApiKeyManager = ({
   }, [fetchLLMDetails]);
 
   const handleActivate = (provider, contextUserId, contextFirmId) => {
-    const effectiveUserId = HARD_USER_ID;
-    const effectiveFirmId = HARD_FIRM_ID;
+    const effectiveUserId = userId;
+    const effectiveFirmId = firmId;
     
     console.log(`🔧 Activating provider: ${provider} for User: ${effectiveUserId}, Firm: ${effectiveFirmId}`);
     
@@ -208,19 +204,19 @@ const ApiKeyManager = ({
     
     // Store the active provider for this user/firm
     localStorage.setItem(STORAGE_KEYS.ACTIVE_PROVIDER, JSON.stringify({
-      userId: HARD_USER_ID,
-      firmId: HARD_FIRM_ID,
+      userId: userId,
+      firmId: firmId,
       provider: llmProvider,
       category: selectedCategory,
       timestamp: new Date().toISOString()
     }));
 
     try {
-      console.log(`📝 Submitting API key for Category: ${selectedCategory}, Provider: ${llmProvider}, User: ${HARD_USER_ID}, Firm: ${HARD_FIRM_ID}`);
+      console.log(`📝 Submitting API key for Category: ${selectedCategory}, Provider: ${llmProvider}, User: ${userId}, Firm: ${firmId}`);
       
       const response = await axios.post(`${apiBaseUrl}/add-api-key`, {
-        USERID: HARD_USER_ID,
-        FIRMID: HARD_FIRM_ID,
+        USERID: userId,
+        FIRMID: firmId,
         LLM_PROVIDER_TYPE: CATEGORY_DB_MAP[selectedCategory] || selectedCategory,
         LLM_PROVIDER: llmProvider,
         API_KEY: apiKey.trim(),

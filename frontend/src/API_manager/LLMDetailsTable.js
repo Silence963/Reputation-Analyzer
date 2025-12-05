@@ -150,8 +150,9 @@ const LLMDetailsTable = ({
 
   const maskApiKey = (apiKey) => {
     if (!apiKey) return 'N/A';
-    if (apiKey.length <= 8) return '*'.repeat(apiKey.length);
-    return apiKey.substring(0, 4) + '*'.repeat(Math.max(0, apiKey.length - 8)) + apiKey.substring(apiKey.length - 4);
+    if (apiKey.length <= 5) return '*'.repeat(apiKey.length);
+    const maskedMiddle = '**';
+    return apiKey.substring(0, 2) + maskedMiddle + apiKey.substring(apiKey.length - 3);
   };
 
   // Get provider type display name with fallback
