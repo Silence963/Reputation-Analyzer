@@ -14,3 +14,10 @@ export const analyzeGoogleReviews = async (company_id, force_refresh = false) =>
   return res.data;
 };
 
+export const updateCompanyGoogleUrl = async (company_id, google_url) => {
+  const res = await axios.patch(
+    `${API_BASE}/companies/${company_id}/google-url`,
+    { google_url }
+  );
+  return res.data;
+};

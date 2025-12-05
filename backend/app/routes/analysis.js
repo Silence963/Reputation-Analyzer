@@ -242,14 +242,46 @@ router.post('/google', async (req, res) => {
         logger.info(`No address available, scraping for '${companyName}' only...`);
       }
       
+      // Check if this company has ANY reviews in the database (determines first scrape vs refresh)
+      const existingReviewsCount = await CompanyReview.count({
+        where: {
+          COMPANY_ID: companyId,
+          SOURCE: 'GOOGLE'
+        }
+      });
+      
+      // First scrape: get all reviews. Refresh: get top 50 recent reviews
+      const maxReviewsLimit = existingReviewsCount === 0 ? 999999 : 50;
+      logger.info(existingReviewsCount === 0 
+        ? 'First scrape - fetching all reviews' 
+        : `Refresh scrape - limiting to ${maxReviewsLimit} most recent reviews`);
+      
       // Scrape reviews
       let rawReviews;
       let scrapeError = null;
+      let extractedGoogleUrl = null;
       try {
-        rawReviews = await getGoogleReviews(company, { 
-          maxReviews: 150, 
+        const scrapeResult = await getGoogleReviews(company, { 
+          maxReviews: maxReviewsLimit,
           includeMeta: true 
         });
+        
+        // Handle new format with URL extraction
+        if (scrapeResult && typeof scrapeResult === 'object' && scrapeResult.reviews) {
+          rawReviews = scrapeResult.reviews;
+          extractedGoogleUrl = scrapeResult.google_url;
+        } else {
+          rawReviews = scrapeResult || [];
+        }
+        
+        // Update company's Google URL if extracted and company doesn't have one
+        if (extractedGoogleUrl && (!company.GOOGLE_RVW_LINK || company.GOOGLE_RVW_LINK === 'Not Available')) {
+          logger.info(`Updating company Google URL: ${extractedGoogleUrl}`);
+          await Company.update(
+            { GOOGLE_RVW_LINK: extractedGoogleUrl },
+            { where: { VEND_ID: companyId } }
+          );
+        }
       } catch (error) {
         logger.error('Scraping failed:', error);
         // Don’t fail the entire request; continue with empty reviews and report the error in metadata

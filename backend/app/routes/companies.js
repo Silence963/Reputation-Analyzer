@@ -66,4 +66,37 @@ router.get('/:companyId', async (req, res) => {
   }
 });
 
+// PATCH /companies/:id/google-url - Update company's Google review URL
+router.patch('/:companyId/google-url', async (req, res) => {
+  try {
+    const { companyId } = req.params;
+    const { google_url } = req.body;
+    
+    if (!google_url || typeof google_url !== 'string') {
+      return res.status(400).json({ error: 'google_url is required and must be a string' });
+    }
+    
+    const company = await KF_VENDOR.findByPk(companyId);
+    
+    if (!company) {
+      return res.status(404).json({ error: 'Company not found' });
+    }
+    
+    // Update the Google review link
+    await company.update({ GOOGLE_RVW_LINK: google_url });
+    
+    logger.info(`Updated Google URL for company ${companyId}: ${google_url}`);
+    
+    res.json({
+      success: true,
+      message: 'Google review URL updated successfully',
+      company_id: parseInt(companyId),
+      google_url: google_url
+    });
+  } catch (error) {
+    logger.error('Error updating Google URL:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

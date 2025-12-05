@@ -9,7 +9,7 @@ const logger = require('../utils/logger');
  */
 async function getGoogleReviews(company, options = {}) {
   const {
-    maxReviews = 200,
+    maxReviews = 999999,
     includeMeta = true,
     waitSecs = 2000,
     scrollPause = 2500,
@@ -227,15 +227,38 @@ async function getGoogleReviews(company, options = {}) {
     
     logger.info(`Finished. Total reviews collected: ${results.length}`);
     
-  } catch (error) {
-    logger.error('Error during scraping:', error);
-  } finally {
+    // Extract the current Google Maps URL (contains place ID) before closing browser
+    let currentUrl = null;
+    try {
+      currentUrl = page.url();
+      logger.info(`Extracted Google URL: ${currentUrl}`);
+    } catch (error) {
+      logger.error('Failed to extract URL:', error);
+    }
+    
+    // Close browser
     if (browser) {
       await browser.close();
     }
+    
+    // Return results with URL if metadata requested
+    if (includeMeta) {
+      return {
+        reviews: results,
+        google_url: currentUrl
+      };
+    } else {
+      return results.map(r => r.text).filter(Boolean);
+    }
+    
+  } catch (error) {
+    logger.error('Error during scraping:', error);
+    if (browser) {
+      await browser.close();
+    }
+    // Return empty result on error
+    return includeMeta ? { reviews: [], google_url: null } : [];
   }
-  
-  return includeMeta ? results : results.map(r => r.text).filter(Boolean);
 }
 
 /**

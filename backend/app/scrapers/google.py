@@ -7,7 +7,7 @@ import time
 import re
 
 
-def get_google_reviews(company, max_reviews=200, include_meta=False, wait_secs=2, scroll_pause=2.5, max_stagnant=5):
+def get_google_reviews(company, max_reviews=999999, include_meta=False, wait_secs=2, scroll_pause=2.5, max_stagnant=5):
     """
     Scrape Google Maps reviews for a given company.
 
@@ -15,10 +15,10 @@ def get_google_reviews(company, max_reviews=200, include_meta=False, wait_secs=2
     ----------
     company : object
         Must expose .COMPANY_NAME and optionally .GOOGLE_RVW_LINK.
-    max_reviews : int, default=200
+    max_reviews : int, default=999999
         Minimum number of reviews to attempt before stopping (if available).
     include_meta : bool, default=False
-        If True, return list of dicts with text/rating/reviewer/date.
+        If True, return dict with 'reviews' and 'google_url'.
         If False, return list of review text strings (backward compatible).
     wait_secs : int
         Max wait for key elements.
@@ -220,14 +220,25 @@ def get_google_reviews(company, max_reviews=200, include_meta=False, wait_secs=2
                 pass
 
         print(f"[SCRAPER] Finished. Total reviews collected: {len(results)}")
+        
+        # Extract the current Google Maps URL (contains place ID)
+        try:
+            current_url = driver.current_url
+            print(f"[SCRAPER] Extracted Google URL: {current_url}")
+        except Exception as e:
+            print(f"[SCRAPER] Failed to extract URL: {e}")
+            current_url = None
 
     # ----------------------------------------------------------------------
     # STEP 5: Return shape requested
     # ----------------------------------------------------------------------
     if include_meta:
-        return results
+        return {
+            'reviews': results,
+            'google_url': current_url
+        }
     else:
-        # Return list of text only
+        # Return list of text only (backward compatible)
         return [r["text"] for r in results if r.get("text")]
 
 

@@ -681,6 +681,31 @@ def get_company_details(company_id: int, db: Session = Depends(get_db)):
         }
     }
 
+@app.patch("/companies/{company_id}/google-url")
+def update_company_google_url(company_id: int, request: dict, db: Session = Depends(get_db)):
+    """Update company's Google review URL"""
+    google_url = request.get("google_url")
+    
+    if not google_url or not isinstance(google_url, str):
+        raise HTTPException(status_code=400, detail="google_url is required and must be a string")
+    
+    company = db.query(KF_VENDOR).filter(KF_VENDOR.VEND_ID == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    
+    # Update the Google review link
+    company.GOOGLE_RVW_LINK = google_url
+    db.commit()
+    
+    print(f"[INFO] Updated Google URL for company {company_id}: {google_url}")
+    
+    return {
+        "success": True,
+        "message": "Google review URL updated successfully",
+        "company_id": company_id,
+        "google_url": google_url
+    }
+
 from fastapi import Request
 
 @app.post("/analyze/google/")
@@ -784,8 +809,26 @@ def analyze_google_reviews(company_id: int, request: Request, db: Session = Depe
             print(f"[INFO] No address available, scraping for '{company_name}' only...")
             print(f"[INFO] Scraping Google reviews for '{company_name}'...")
         
+        # Check if this company has ANY reviews in the database (determines first scrape vs refresh)
+        existing_reviews_count = db.query(CompanyReview).filter(
+            CompanyReview.COMPANY_ID == company_id,
+            CompanyReview.SOURCE == "GOOGLE"
+        ).count()
+        
+        # First scrape: get all reviews. Refresh: get top 50 recent reviews
+        max_reviews_limit = 999999 if existing_reviews_count == 0 else 50
+        print(f"[INFO] {'First scrape - fetching all reviews' if existing_reviews_count == 0 else f'Refresh scrape - limiting to {max_reviews_limit} most recent reviews'}")
+        
         try:
-            raw_reviews = get_google_reviews(company, max_reviews=150, include_meta=True)
+            scrape_result = get_google_reviews(company, max_reviews=max_reviews_limit, include_meta=True)
+            raw_reviews = scrape_result['reviews'] if isinstance(scrape_result, dict) else scrape_result
+            extracted_google_url = scrape_result.get('google_url') if isinstance(scrape_result, dict) else None
+            
+            # Update company's Google URL if extracted and company doesn't have one
+            if extracted_google_url and (not company.GOOGLE_RVW_LINK or company.GOOGLE_RVW_LINK == 'Not Available'):
+                print(f"[INFO] Updating company Google URL: {extracted_google_url}")
+                company.GOOGLE_RVW_LINK = extracted_google_url
+                db.commit()
         except Exception as e:
             print(f"[ERROR] Scraping failed: {e}")
             return {"error": "Failed to scrape reviews."}
