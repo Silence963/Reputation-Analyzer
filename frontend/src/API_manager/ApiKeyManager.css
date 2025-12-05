@@ -1,0 +1,220 @@
+/* Full-page Scrollbar */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+  }
+  
+  /* Modal Overlay */
+  .apikey-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    overflow-y: auto;
+    backdrop-filter: blur(4px);
+  }
+  
+  /* Modal Container */
+  .apikey-modal-container {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    width: 800px;
+    max-width: 90%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    animation: popUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  /* Pop-up Animation */
+  @keyframes popUp {
+    from {
+      opacity: 0;
+      transform: translateY(-50px) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  
+  /* Modal Header */
+  .apikey-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #f0f0f0;
+  }
+  
+  .apikey-modal-header h2 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0;
+  }
+  
+  .apikey-modal-close {
+    background: none;
+    border: none;
+    font-size: 28px;
+    cursor: pointer;
+    color: #666;
+    transition: all 0.3s ease;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .apikey-modal-close:hover {
+    color: #e74c3c;
+    background: #f8f9fa;
+    transform: rotate(90deg);
+  }
+  
+  /* Form Styling */
+  .apikey-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  
+  .apikey-form label {
+    font-weight: 600;
+    color: #34495e;
+    margin-bottom: 8px;
+    display: block;
+    font-size: 14px;
+  }
+  
+  .apikey-form select,
+  .apikey-form input {
+    padding: 12px 16px;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    background: white;
+  }
+  
+  .apikey-form select:focus,
+  .apikey-form input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+  }
+  
+  .apikey-form select:hover,
+  .apikey-form input:hover {
+    border-color: #bdc3c7;
+  }
+  
+  .submit-button {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  
+  .submit-button:hover:not(:disabled) {
+    background: linear-gradient(135deg, #2980b9, #21618c);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+  }
+  
+  .submit-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+  
+  /* Custom Scrollbar */
+  .apikey-modal-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .apikey-modal-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+  }
+  
+  .apikey-modal-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+  }
+  
+  .apikey-modal-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .apikey-modal-container {
+      width: 95%;
+      padding: 20px;
+      margin: 10px;
+    }
+    
+    .apikey-modal-header h2 {
+      font-size: 20px;
+    }
+    
+    .apikey-form {
+      gap: 15px;
+    }
+    
+    .apikey-form input,
+    .apikey-form select {
+      padding: 10px 12px;
+      font-size: 16px; /* Prevent zoom on iOS */
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .apikey-modal-container {
+      width: 98%;
+      padding: 15px;
+    }
+    
+    .apikey-modal-header {
+      flex-direction: column;
+      gap: 10px;
+      text-align: center;
+    }
+    
+    .submit-button {
+      padding: 12px 20px;
+      font-size: 14px;
+    }
+  }
+  
+  /* Animation for loading spinner */
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
