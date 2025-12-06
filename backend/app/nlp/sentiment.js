@@ -11,11 +11,12 @@ const stemmer = natural.PorterStemmer;
 const tokenizer = new natural.WordTokenizer();
 
 /**
- * Analyze sentiment of a given text
+ * Analyze sentiment of a given text with optional rating consideration
  * @param {string} text - The text to analyze
+ * @param {number} rating - Optional rating (1-5 stars) to consider
  * @returns {Object} - Object containing sentiment and polarity
  */
-function analyzeSentiment(text) {
+function analyzeSentiment(text, rating = null) {
   if (!text || typeof text !== 'string') {
     return { sentiment: 'neutral', polarity: 0.0 };
   }
@@ -38,6 +39,12 @@ function analyzeSentiment(text) {
     const wordCount = tokenizer.tokenize(cleanText).length;
     if (wordCount > 0) {
       polarity = polarity / Math.sqrt(wordCount);
+    }
+    
+    // Incorporate rating if provided (1-5 scale converted to -1 to 1)
+    if (rating && typeof rating === 'number' && rating > 0) {
+      const ratingPolarity = (rating - 3) / 2; // Convert 1-5 to -1 to 1 scale (3=neutral)
+      polarity = (polarity + ratingPolarity) / 2; // Average text sentiment with rating sentiment
     }
     
     // Clamp to [-1, 1] range

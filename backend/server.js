@@ -13,6 +13,7 @@ const logger = require('./app/utils/logger');
 const companiesRoutes = require('./app/routes/companies');
 const analysisRoutes = require('./app/routes/analysis');
 const llmRoutes = require('./app/routes/llm');
+const authRoutes = require('./app/routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -48,6 +49,7 @@ app.use(morgan('combined', { stream: { write: message => logger.info(message.tri
 app.use('/companies', companiesRoutes);
 app.use('/analyze', analysisRoutes);
 app.use('/', llmRoutes); // For LLM management endpoints
+app.use('/', authRoutes); // For authentication endpoints
 
 // Health check endpoint
 app.get('/health', (req, res) => {

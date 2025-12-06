@@ -31,9 +31,29 @@ const KF_VENDOR = sequelize.define('KF_VENDOR', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  VEND_CATEGRY: {
+    type: DataTypes.STRING(500),
+    allowNull: false
+  },
+  VEND_SDATE: {
+    type: DataTypes.DATE,
+    allowNull: false
+  },
+  INSRT_DTM: {
+    type: DataTypes.DATE,
+    allowNull: false
+  },
   GOOGLE_RVW_LINK: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  PORTAL_ID: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  MEMBERID: {
+    type: DataTypes.INTEGER,
+    allowNull: false
   }
 }, {
   tableName: 'kf_vendor',

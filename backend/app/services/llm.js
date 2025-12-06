@@ -52,17 +52,20 @@ async function getActiveLLMProvider(userId = 1481, firmId = 2) {
 /**
  * Generate LLM summary using the active provider
  */
-async function getLLMSummary(positive, neutral, negative) {
+async function getLLMSummary(positive, neutral, negative, userId = 1481, firmId = 2) {
   try {
-    const llmConfig = await getActiveLLMProvider();
+    logger.info(`🔐 Validating API key ownership for user_id=${userId}, firm_id=${firmId}`);
+    const llmConfig = await getActiveLLMProvider(userId, firmId);
     if (!llmConfig) {
-      logger.warn('No active LLM provider configured');
+      logger.warn(`🤖 ❌ No active LLM provider found for user_id=${userId}, firm_id=${firmId}`);
       return 'AI summary unavailable: No LLM provider configured. Please set up an API key in the API manager.';
     }
     
     const { provider, apiKey } = llmConfig;
-    logger.info(`Using configured provider: ${provider}`);
-    logger.info(`Processing ${positive.length} positive, ${neutral.length} neutral, ${negative.length} negative reviews`);
+    logger.info(`🤖 ✅ Using LLM provider: ${provider} (owned by user_id=${userId}, firm_id=${firmId})`);
+    logger.info(`Processing ${positive.length} positive, ${neutral.length} neutral, ${negative.length} negative reviews with ${provider}`);
+    logger.debug(`API key (masked): ${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 5)}`);
+
     
     // Format reviews with dates
     function reviewLines(reviews) {
@@ -77,16 +80,43 @@ async function getLLMSummary(positive, neutral, negative) {
       "You are a world-class reputation strategist and business analyst with years of experience in brand management and crisis response.",
       "Given the following customer reviews (with their posting dates), analyze the company's reputation trends over time.",
       "Identify periods of improvement or decline, and provide actionable, time-aware recommendations.\n",
-      "\nYour summary must include:",
-      "- An executive summary of overall customer sentiment and how it has changed over time.",
-      "- Key positive, negative, and neutral themes, with examples and their posting dates.",
-      "- A timeline or commentary on when reputation was best or worst, and possible reasons.",
-      "- Actionable, time-sensitive recommendations for the business.\n",
-      "\nFormat your response with clear section headers: EXECUTIVE SUMMARY, REPUTATION TIMELINE, POSITIVE THEMES, NEGATIVE THEMES, NEUTRAL THEMES, RECOMMENDATIONS.\n\n",
+      "\nYour response must include these EXACT sections with clear formatting:\n",
+      "## EXECUTIVE SUMMARY",
+      "- Overall sentiment score (1-10)",
+      "- Key finding about business reputation",
+      "- One sentence describing the most urgent issue\n",
+      "## REPUTATION TIMELINE",
+      "- When reputation was best/worst with specific dates",
+      "- Trends observed (improving, declining, stable)",
+      "- Possible causes based on review dates\n",
+      "## POSITIVE THEMES",
+      "- List top 3-5 positive themes with specific examples and dates",
+      "- What customers love about the business\n",
+      "## NEGATIVE THEMES",
+      "- List top 3-5 negative themes with specific examples and dates",
+      "- What causes customer dissatisfaction\n",
+      "## NEUTRAL THEMES",
+      "- Feedback that was neither clearly positive nor negative\n",
+      "## ACTION PLAN: OVERCOME NEGATIVE REVIEWS",
+      "For each major negative theme, provide:",
+      "1. Root cause analysis",
+      "2. Specific actionable steps (1-3 months implementation)",
+      "3. Expected impact",
+      "4. Who should own this (staff, management, operations)\n",
+      "## PERFORMANCE IMPROVEMENT STRATEGY",
+      "- 30-day quick wins to boost reputation",
+      "- 90-day strategic improvements",
+      "- Long-term initiatives (6+ months)",
+      "- Key metrics to track success\n",
+      "## RECOMMENDATIONS FOR STAFF & MANAGEMENT",
+      "- Training focus areas",
+      "- Process improvements needed",
+      "- Communication improvements\n\n",
       "POSITIVE REVIEWS (with dates):\n" + reviewLines(positive).join('\n') + "\n\n",
       "NEUTRAL REVIEWS (with dates):\n" + reviewLines(neutral).join('\n') + "\n\n",
       "NEGATIVE REVIEWS (with dates):\n" + reviewLines(negative).join('\n')
     ].join('');
+    
     
     // Provider-specific configurations
     const config = getProviderConfig(provider, apiKey, prompt);
@@ -95,14 +125,14 @@ async function getLLMSummary(positive, neutral, negative) {
       return `AI summary failed: Unsupported provider '${provider}'. Please configure a supported provider in the API manager.`;
     }
     
-    logger.info(`Making API request to ${config.endpoint}`);
+    logger.info(`Making API request to ${config.endpoint} using ${provider}`);
     const response = await axios.post(config.endpoint, config.data, {
       headers: config.headers,
       timeout: 60000
     });
     
     const summary = extractSummaryFromResponse(provider, response.data);
-    logger.info(`Summary generated successfully using ${provider}. Length: ${summary.length} characters`);
+    logger.info(`✅ LLM summary generated successfully using ${provider}. Length: ${summary.length} characters`);
     
     return summary;
     
@@ -236,11 +266,16 @@ module.exports = {
  * Generate a tailored response for a single review using the active LLM provider.
  * Falls back to null if no provider configured or on error.
  */
-async function generateLLMResponseForReview(review, companyName, businessType = 'general') {
+async function generateLLMResponseForReview(review, companyName, businessType = 'general', userId = 1481, firmId = 2) {
   try {
-    const llmConfig = await getActiveLLMProvider();
-    if (!llmConfig) return null;
+    logger.debug(`🔐 Validating API key ownership for per-review LLM (user_id=${userId}, firm_id=${firmId})`);
+    const llmConfig = await getActiveLLMProvider(userId, firmId);
+    if (!llmConfig) {
+      logger.debug(`No API key allocated for user_id=${userId}, firm_id=${firmId} - skipping per-review generation`);
+      return null;
+    }
     const { provider, apiKey } = llmConfig;
+    logger.debug(`Using allocated ${provider} API key for user_id=${userId}, firm_id=${firmId}`);
 
     const tone = review.sentiment === 'negative' ? 'empathetic and solution-oriented'
       : review.sentiment === 'positive' ? 'warm and grateful'
@@ -279,4 +314,60 @@ async function generateLLMResponseForReview(review, companyName, businessType = 
   }
 }
 
+/**
+ * Detect business type using LLM by analyzing company details and reviews
+ */
+async function detectBusinessTypeWithLLM(companyName, companyDescription, sampleReviews = [], userId = 1481, firmId = 2) {
+  try {
+    logger.info(`🔍 Using LLM to detect business type for: ${companyName}`);
+    
+    const llmConfig = await getActiveLLMProvider(userId, firmId);
+    if (!llmConfig) {
+      logger.warn(`LLM business type detection unavailable - no LLM provider found`);
+      return null;
+    }
+
+    const { provider, apiKey } = llmConfig;
+    
+    // Build prompt with company info and sample reviews
+    const reviewSamples = sampleReviews
+      .slice(0, 5)
+      .map(r => r.text || r.REVIEW_TEXT || '')
+      .join('\n- ');
+    
+    const prompt = `Analyze the following business information and determine the EXACT business type. Respond with ONLY the category name, nothing else.
+
+Company Name: ${companyName}
+Description: ${companyDescription || 'Not provided'}
+
+Sample Customer Reviews:
+- ${reviewSamples || 'No reviews available'}
+
+Business Categories: restaurant, cafe, bar, hotel, motel, retail, clothing_store, grocery, gym, fitness, healthcare, hospital, clinic, dental, automotive, mechanic, repair_shop, salon, spa, entertainment, theater, cinema, education, school, service, delivery, transportation, cafe_restaurant, sports_facility, beauty, or other
+
+Respond with ONLY the category name.`;
+
+    const config = getProviderConfig(provider, apiKey, prompt);
+    if (!config) return null;
+
+    const response = await axios.post(config.endpoint, config.data, {
+      headers: config.headers,
+      timeout: 30000
+    });
+    
+    const businessType = extractSummaryFromResponse(provider, response.data)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z_]/g, '');
+    
+    logger.info(`✅ LLM detected business type: ${businessType}`);
+    return businessType || null;
+    
+  } catch (error) {
+    logger.warn('LLM business type detection failed:', error.message);
+    return null;
+  }
+}
+
 module.exports.generateLLMResponseForReview = generateLLMResponseForReview;
+module.exports.detectBusinessTypeWithLLM = detectBusinessTypeWithLLM;

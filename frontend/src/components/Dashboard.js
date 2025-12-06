@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import CompanySearch from "./CompanySearch";
 import SentimentChart from "./SentimentChart";
 import ReviewList from "./ReviewList";
@@ -19,10 +20,14 @@ import {
   Tab,
   ToggleButton,
   ToggleButtonGroup,
-  Chip
+  Chip,
+  IconButton,
+  Tooltip
 } from "@mui/material";
+import HomeIcon from "@mui/icons-material/Home";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   // Extract userid and firmid from URL parameters
   const [userId, setUserId] = useState(null);
   const [firmId, setFirmId] = useState(null);
@@ -94,7 +99,7 @@ export default function Dashboard() {
     console.log(`Provider ${provider} activated for User ${userId}, Firm ${firmId}`);
   };
 
-  const handleSearch = async (companyId, forceRefresh = false) => {
+  const handleSearch = async (companyId, reviewCount = null, forceRefresh = false) => {
     setLoading(true);
     setError("");
     setTopReviews(null);
@@ -104,7 +109,7 @@ export default function Dashboard() {
     setCompanyName("");
     setAnalysisMetadata(null);
     try {
-      const data = await analyzeGoogleReviews(companyId, forceRefresh);
+      const data = await analyzeGoogleReviews(companyId, forceRefresh, reviewCount, userId, firmId);
       setChartData(data.chart_data);
       setTopReviews(data.top_reviews);
       setLlmSummary(data.llm_summary);
@@ -132,12 +137,38 @@ export default function Dashboard() {
   };
 
   return (
-    <>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        position: 'relative',
+        overflow: 'hidden',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3), transparent 50%), radial-gradient(circle at 80% 80%, rgba(138, 43, 226, 0.3), transparent 50%)',
+          animation: 'pulse 8s ease-in-out infinite',
+        },
+        '@keyframes pulse': {
+          '0%, 100%': { opacity: 1 },
+          '50%': { opacity: 0.8 },
+        },
+      }}
+    >
       <Paper elevation={3} sx={{ 
         p: { xs: 2, sm: 3, md: 4 }, 
         maxWidth: 800, 
         margin: { xs: '16px', sm: '24px auto', md: '32px auto' }, 
-        position: 'relative' 
+        position: 'relative',
+        zIndex: 1,
+        background: 'rgba(255,255,255,0.95)',
+        backdropFilter: 'blur(20px)',
+        borderRadius: 4,
+        border: '1px solid rgba(255,255,255,0.3)'
       }}>
         <Backdrop open={loading} sx={{
           color: '#1976d2', // light blue
@@ -152,27 +183,83 @@ export default function Dashboard() {
           </Typography>
         </Backdrop>
         
-        {/* API Manager Button */}
+        {/* Header with Home Button and Title */}
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
-          mb: 2,
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: { xs: 1, sm: 0 }
+          mb: 3,
+          gap: 2
         }}>
-          <Typography variant="h6" color="primary" sx={{ fontSize: { xs: '1.1rem', sm: '1.25rem' } }}>
-            REPA Analysis Dashboard
-          </Typography>
-          <Button
-            variant="outlined"
-            startIcon={<span>⚙️</span>}
-            onClick={() => setShowApiManager(true)}
-            size="small"
-            sx={{ width: { xs: '100%', sm: 'auto' } }}
-          >
-            AI Settings
-          </Button>
+          <Tooltip title="Go to Home">
+            <IconButton
+              onClick={() => navigate('/')}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5568d3 0%, #653a8b 100%)',
+                  transform: 'scale(1.1)',
+                  transition: 'all 0.3s ease'
+                },
+                width: 50,
+                height: 50,
+                flexShrink: 0
+              }}
+            >
+              <HomeIcon sx={{ fontSize: 28 }} />
+            </IconButton>
+          </Tooltip>
+
+          <Box sx={{ flex: 1 }}>
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                fontSize: { xs: '1.1rem', sm: '1.25rem' },
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                textAlign: 'center'
+              }}
+            >
+              REPA Analysis Dashboard
+            </Typography>
+            {companyName && (
+              <Typography 
+                variant="h5" 
+                sx={{ 
+                  fontWeight: 800,
+                  color: '#667eea',
+                  textAlign: 'center',
+                  mt: 1
+                }}
+              >
+                {companyName}
+              </Typography>
+            )}
+          </Box>
+
+          <Tooltip title="AI Settings">
+            <Button
+              variant="outlined"
+              onClick={() => setShowApiManager(true)}
+              size="small"
+              sx={{ 
+                borderColor: '#667eea',
+                color: '#667eea',
+                fontWeight: 600,
+                flexShrink: 0,
+                '&:hover': {
+                  borderColor: '#5568d3',
+                  background: 'rgba(102, 126, 234, 0.1)'
+                }
+              }}
+            >
+              ⚙️ AI Settings
+            </Button>
+          </Tooltip>
         </Box>
         
         {activeProvider && (
@@ -188,7 +275,12 @@ export default function Dashboard() {
           </Alert>
         )}
         
-        <CompanySearch onSearch={handleSearch} />
+        <CompanySearch 
+          onSearch={handleSearch} 
+          userId={userId} 
+          firmId={firmId}
+          onCompanyLoaded={(name) => setCompanyName(name)}
+        />
         {/* Status notices for cache/refresh and backend warnings */}
         {analysisMetadata?.using_cached_data && (
           <Alert severity="success" sx={{ mb: 2 }}>
@@ -226,9 +318,15 @@ export default function Dashboard() {
             </Box>
             <Button
               variant="contained"
-              color="secondary"
               onClick={() => handleSearch(analysisResult?.company_id || null, true)}
               disabled={loading || !analysisResult?.company_id}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                fontWeight: 600,
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #5568d3 0%, #653a8b 100%)',
+                }
+              }}
             >
               Refresh Reviews
             </Button>
@@ -431,7 +529,7 @@ export default function Dashboard() {
           </>
         )}
       </Paper>
-      
+
       {/* Floating Action Button for API Manager */}
       <Fab
         color="primary"
@@ -455,6 +553,6 @@ export default function Dashboard() {
           currentFirmId={firmId}
         />
       )}
-    </>
+    </Box>
   );
 }

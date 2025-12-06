@@ -1,0 +1,13 @@
+-- Add user authentication fields to kf_vendor table
+ALTER TABLE kf_vendor 
+ADD COLUMN IF NOT EXISTS USERID INT NULL,
+ADD COLUMN IF NOT EXISTS FIRMID INT NULL,
+ADD COLUMN IF NOT EXISTS USER_EMAIL VARCHAR(255) NULL,
+ADD COLUMN IF NOT EXISTS PASSWORD_HASH VARCHAR(255) NULL,
+ADD COLUMN IF NOT EXISTS USER_NAME VARCHAR(255) NULL;
+
+-- Create index on USER_EMAIL for faster lookups
+CREATE INDEX IF NOT EXISTS idx_kf_vendor_email ON kf_vendor(USER_EMAIL);
+
+-- Create index on USERID and FIRMID for faster queries
+CREATE INDEX IF NOT EXISTS idx_kf_vendor_user_firm ON kf_vendor(USERID, FIRMID);

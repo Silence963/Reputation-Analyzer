@@ -66,7 +66,8 @@ function analyzeReviewForResponse(reviewData, companyName, companyDescription, b
       companyName,
       businessType,
       analysis.key_issues,
-      reviewData.rating
+      reviewData.rating,
+      reviewData.reviewer_name || reviewData.reviewer || ''
     );
     
   } catch (error) {
@@ -129,8 +130,9 @@ function generateBusinessRecommendations(sentiment, issues, businessType) {
 /**
  * Generate response templates
  */
-function generateResponseTemplates(sentiment, tone, companyName, businessType = 'general', issues = [], rating = null) {
+function generateResponseTemplates(sentiment, tone, companyName, businessType = 'general', issues = [], rating = null, reviewerName = '') {
   const templates = [];
+  const nameGreeting = reviewerName && reviewerName.trim() ? `Hi ${reviewerName},\n\n` : 'Hello,\n\n';
   
   if (sentiment === 'negative') {
     const issueHint = issues.length ? ` We understand your concern regarding ${issues[0].replace('_', ' ')} and will address this with our team immediately.` : '';
@@ -140,20 +142,20 @@ function generateResponseTemplates(sentiment, tone, companyName, businessType = 
       : businessType === 'hotel' ? ` Your comfort and experience are very important to us.`
       : businessType === 'retail' ? ` We strive to ensure our customers receive great value and service.`
       : ` We take all feedback seriously and are committed to improving.`;
-    templates.push(`${baseApology}${issueHint}${sectorTouch} ${closing}`);
+    templates.push(`${nameGreeting}${baseApology}${issueHint}${sectorTouch} ${closing}`);
   } else if (sentiment === 'positive') {
     const starMention = rating ? ` Your ${rating}-star rating means a lot to us.` : '';
     const sectorTouch = businessType === 'restaurant' ? ` We're glad you enjoyed the experience—our team works hard to deliver great taste and service.`
       : businessType === 'hotel' ? ` We’re delighted you had a comfortable stay—our team truly appreciates it.`
       : businessType === 'retail' ? ` We’re happy you found what you needed—thank you for choosing us.`
       : ` We truly appreciate your support.`;
-    templates.push(`Thank you so much for your wonderful review!${starMention} ${sectorTouch} We look forward to welcoming you again soon.`);
+    templates.push(`${nameGreeting}Thank you so much for your wonderful review!${starMention} ${sectorTouch} We look forward to welcoming you again soon.`);
   } else {
     const sectorTouch = businessType === 'restaurant' ? ` We value your thoughts as we aim for consistent quality and service.`
       : businessType === 'hotel' ? ` Your comfort matters to us—thanks for sharing your thoughts.`
       : businessType === 'retail' ? ` Your input helps us improve our product selection and service.`
       : ` Your input helps us improve.`;
-    templates.push(`Thank you for your feedback about ${companyName}.${sectorTouch} If you have any additional comments or suggestions, please feel free to reach out to us.`);
+    templates.push(`${nameGreeting}Thank you for your feedback about ${companyName}.${sectorTouch} If you have any additional comments or suggestions, please feel free to reach out to us.`);
   }
   
   return templates;

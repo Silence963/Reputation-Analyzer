@@ -170,6 +170,55 @@ async function getGoogleReviews(company, options = {}) {
       return [];
     }
     
+    // Extract total review count from the page
+    let totalReviewCount = null;
+    try {
+      // Wait for rating summary to load
+      await page.waitForTimeout(2000);
+      
+      // Try multiple selectors to find the total review count
+      const reviewCountSelectors = [
+        // Selector for "570 reviews" text near rating
+        'span:contains("reviews")',
+        '.JLqJ4b', // Common class for review count
+        '[aria-label*="reviews"]',
+        // Generic approach - find any text with "reviews"
+        'div, span, p'
+      ];
+      
+      // Extract from page using evaluate
+      totalReviewCount = await page.evaluate(() => {
+        // Look for text containing "reviews" with a number
+        const bodyText = document.body.innerText;
+        const reviewMatch = bodyText.match(/(\d+)\s+reviews?/i);
+        if (reviewMatch) {
+          return parseInt(reviewMatch[1]);
+        }
+        
+        // Try looking in specific elements
+        const elements = document.querySelectorAll('*');
+        for (let el of elements) {
+          const text = el.textContent;
+          if (text && text.includes('reviews')) {
+            const match = text.match(/(\d+)\s+reviews?/i);
+            if (match) {
+              return parseInt(match[1]);
+            }
+          }
+        }
+        
+        return null;
+      });
+      
+      if (totalReviewCount) {
+        logger.info(`✅ Found total review count: ${totalReviewCount} reviews available on Google`);
+      } else {
+        logger.warn(`⚠️  Could not extract total review count from page`);
+      }
+    } catch (error) {
+      logger.warn(`Error extracting total review count: ${error.message}`);
+    }
+    
     // Try to click "More reviews" if present
     try {
       const clicked = await clickElementByText(page, ['button', 'div button', 'div'], 'More reviews', 2000);
@@ -245,7 +294,8 @@ async function getGoogleReviews(company, options = {}) {
     if (includeMeta) {
       return {
         reviews: results,
-        google_url: currentUrl
+        google_url: currentUrl,
+        total_reviews_available: totalReviewCount
       };
     } else {
       return results.map(r => r.text).filter(Boolean);
@@ -481,6 +531,84 @@ function hashCode(str) {
   return hash;
 }
 
+/**
+ * Extract ONLY the total review count from Google Maps (no review scraping)
+ * Used to determine how many reviews to scrape in the next call
+ * @param {Object} company - Company object with VEND_TITL, VEND_CON_ADDR, etc.
+ * @returns {Object} - { total_reviews_available: 570 } or null if not found
+ */
+async function getGoogleTotalReviewCount(company) {
+  const googleReviewLink = company.GOOGLE_RVW_LINK;
+  let browser;
+  
+  try {
+    const headless = String(process.env.PUPPETEER_HEADLESS || 'true').toLowerCase() === 'true';
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+    browser = await puppeteer.launch({
+      headless,
+      executablePath,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ]
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1366, height: 768 });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    
+    // Navigate to Google Maps
+    if (googleReviewLink && googleReviewLink !== 'Not Available') {
+      logger.info(`📊 Extracting total review count from: ${googleReviewLink}`);
+      await page.goto(googleReviewLink, { waitUntil: 'networkidle2' });
+    } else {
+      logger.warn(`No Google review link available for total count extraction`);
+      return null;
+    }
+    
+    // Wait for page to load
+    await page.waitForTimeout(2000);
+    
+    // Extract total review count
+    let totalReviewCount = null;
+    try {
+      totalReviewCount = await page.evaluate(() => {
+        const bodyText = document.body.innerText;
+        const reviewMatch = bodyText.match(/(\d+)\s+reviews?/i);
+        if (reviewMatch) {
+          return parseInt(reviewMatch[1]);
+        }
+        return null;
+      });
+      
+      if (totalReviewCount) {
+        logger.info(`📊 Total reviews available on Google: ${totalReviewCount}`);
+      } else {
+        logger.warn(`⚠️ Could not extract total review count`);
+      }
+    } catch (error) {
+      logger.warn(`Error extracting total review count: ${error.message}`);
+    }
+    
+    await browser.close();
+    
+    return totalReviewCount ? { total_reviews_available: totalReviewCount } : null;
+    
+  } catch (error) {
+    logger.error('Error getting Google total review count:', error);
+    if (browser) {
+      await browser.close();
+    }
+    return null;
+  }
+}
+
 module.exports = {
-  getGoogleReviews
+  getGoogleReviews,
+  getGoogleTotalReviewCount
 };

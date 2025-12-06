@@ -99,4 +99,28 @@ router.patch('/:companyId/google-url', async (req, res) => {
   }
 });
 
+// GET /companies/user/:userId/:firmId - Get companies for a specific user and firm
+router.get('/user/:userId/:firmId', async (req, res) => {
+  try {
+    const { userId, firmId } = req.params;
+    
+    // Find companies for this user and firm
+    const companies = await KF_VENDOR.findAll({
+      where: {
+        MEMBERID: userId,
+        PORTAL_ID: firmId
+      }
+    });
+    
+    if (!companies || companies.length === 0) {
+      return res.status(404).json({ error: 'No companies found for this user' });
+    }
+    
+    res.json(companies);
+  } catch (error) {
+    logger.error('Error fetching user companies:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;

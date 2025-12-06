@@ -22,7 +22,11 @@ import {
   Divider,
   Alert,
   IconButton,
-  Tooltip
+  Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -38,6 +42,7 @@ import {
 const ReviewResponseManager = ({ review, onResponseSent }) => {
   const [responseDialog, setResponseDialog] = useState(false);
   const [customResponse, setCustomResponse] = useState('');
+  const [selectedReplyOption, setSelectedReplyOption] = useState('suggested');
   const [expandedPanels, setExpandedPanels] = useState({});
 
   const handlePanelChange = (panel) => (event, isExpanded) => {
@@ -50,7 +55,21 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
   const handleResponseDialog = (open) => {
     setResponseDialog(open);
     if (open && review.response_suggestion) {
+      setSelectedReplyOption('suggested');
       setCustomResponse(review.response_suggestion.suggested_response || '');
+    }
+  };
+  
+  const handleReplyOptionChange = (event) => {
+    const option = event.target.value;
+    setSelectedReplyOption(option);
+    
+    if (option === 'suggested') {
+      setCustomResponse(review.response_suggestion?.suggested_response || '');
+    } else if (option === 'none') {
+      setCustomResponse('');
+    } else if (option === 'custom') {
+      setCustomResponse('');
     }
   };
 
@@ -202,6 +221,57 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
             </AccordionDetails>
           </Accordion>
         )}
+        
+        {/* Quick Response Options */}
+        {review.response_suggestion && (
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 1, 
+            my: 2, 
+            flexWrap: 'wrap',
+            p: 2,
+            backgroundColor: '#f0f7ff',
+            borderRadius: 1,
+            border: '1px solid #90caf9'
+          }}>
+            <Typography variant="body2" sx={{ width: '100%', mb: 1, fontWeight: 600 }}>
+              Quick Actions:
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              color="success"
+              onClick={() => {
+                setSelectedReplyOption('suggested');
+                handleResponseDialog(true);
+              }}
+            >
+              ✨ Use Suggested
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="primary"
+              onClick={() => {
+                setSelectedReplyOption('custom');
+                handleResponseDialog(true);
+              }}
+            >
+              ✍️ Write Custom
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              onClick={() => {
+                setSelectedReplyOption('none');
+                handleResponseDialog(true);
+              }}
+            >
+              🚫 Skip Reply
+            </Button>
+          </Box>
+        )}
 
         {/* Action Recommendations */}
         {review.action_recommendations && (
@@ -297,16 +367,43 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
           <Alert severity="info" sx={{ mb: 2, fontSize: { xs: '0.85rem', sm: '0.875rem' } }}>
             You can customize the suggested response below before sending it to the reviewer.
           </Alert>
-          <TextField
-            fullWidth
-            multiline
-            rows={{ xs: 6, sm: 8 }}
-            value={customResponse}
-            onChange={(e) => setCustomResponse(e.target.value)}
-            label="Your Response"
-            variant="outlined"
-            placeholder="Type your response here..."
-          />
+          
+          {/* Reply Options Dropdown */}
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel id="reply-option-label">Response Option</InputLabel>
+            <Select
+              labelId="reply-option-label"
+              id="reply-option-select"
+              value={selectedReplyOption}
+              onChange={handleReplyOptionChange}
+              label="Response Option"
+            >
+              <MenuItem value="suggested">
+                💡 Use Suggested Response (Personalized with reviewer name)
+              </MenuItem>
+              <MenuItem value="custom">
+                ✍️ Write Custom Reply
+              </MenuItem>
+              <MenuItem value="none">
+                🚫 No Reply Needed
+              </MenuItem>
+            </Select>
+          </FormControl>
+          
+          {/* Response Text Field */}
+          {selectedReplyOption !== 'none' && (
+            <TextField
+              fullWidth
+              multiline
+              rows={{ xs: 6, sm: 8 }}
+              value={customResponse}
+              onChange={(e) => setCustomResponse(e.target.value)}
+              label={selectedReplyOption === 'suggested' ? 'Suggested Response' : 'Your Custom Reply'}
+              variant="outlined"
+              placeholder={selectedReplyOption === 'suggested' ? 'AI-generated response (you can edit)' : 'Type your response here...'}
+              helperText={selectedReplyOption === 'custom' ? 'Remember to mention the reviewer\'s name for a personal touch!' : ''}
+            />
+          )}
         </DialogContent>
         <DialogActions sx={{ 
           flexDirection: { xs: 'column', sm: 'row' },
@@ -322,15 +419,26 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
           <Button
             variant="contained"
             onClick={() => {
-              if (onResponseSent) {
-                onResponseSent(review, customResponse);
+              if (selectedReplyOption === 'none') {
+                // For "no reply" option, confirm and close
+                if (window.confirm('Are you sure you don\'t want to reply to this review?')) {
+                  if (onResponseSent) {
+                    onResponseSent(review, null, 'skipped');
+                  }
+                  handleResponseDialog(false);
+                }
+              } else {
+                // For suggested or custom reply
+                if (onResponseSent) {
+                  onResponseSent(review, customResponse, selectedReplyOption);
+                }
+                handleResponseDialog(false);
               }
-              handleResponseDialog(false);
             }}
-            disabled={!customResponse.trim()}
+            disabled={selectedReplyOption !== 'none' && !customResponse.trim()}
             fullWidth={{ xs: true, sm: false }}
           >
-            Send Response
+            {selectedReplyOption === 'none' ? 'Skip This Review' : 'Send Response'}
           </Button>
         </DialogActions>
       </Dialog>
