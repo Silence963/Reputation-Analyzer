@@ -49,7 +49,7 @@ export default function SentimentChart({ chartData }) {
   const onPieEnter = (_, index) => setActiveIndex(index);
 
   return (
-    <ResponsiveContainer width="100%" height={{ xs: 300, sm: 350, md: 400 }} minHeight={300}>
+    <ResponsiveContainer width="100%" height={400}>
       <PieChart>
         <defs>
           <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">

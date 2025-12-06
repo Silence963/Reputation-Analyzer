@@ -243,9 +243,9 @@ router.post('/google', async (req, res) => {
       }
       
       // Check if this company has ANY reviews in the database (determines first scrape vs refresh)
-      const existingReviewsCount = await CompanyReview.count({
+      const existingReviewsCount = await COMPANY_REVIEWS.count({
         where: {
-          COMPANY_ID: companyId,
+          COMPANY_ID: company_id,
           SOURCE: 'GOOGLE'
         }
       });
@@ -277,9 +277,9 @@ router.post('/google', async (req, res) => {
         // Update company's Google URL if extracted and company doesn't have one
         if (extractedGoogleUrl && (!company.GOOGLE_RVW_LINK || company.GOOGLE_RVW_LINK === 'Not Available')) {
           logger.info(`Updating company Google URL: ${extractedGoogleUrl}`);
-          await Company.update(
+          await KF_VENDOR.update(
             { GOOGLE_RVW_LINK: extractedGoogleUrl },
-            { where: { VEND_ID: companyId } }
+            { where: { VEND_ID: company_id } }
           );
         }
       } catch (error) {
@@ -355,51 +355,82 @@ router.post('/google', async (req, res) => {
           logger.error('Error inserting review to database:', dbError);
         }
       }
-      
-      // Generate LLM summary
-      const positive = reviews.filter(r => r.sentiment === 'positive');
-      const neutral = reviews.filter(r => r.sentiment === 'neutral');
-      const negative = reviews.filter(r => r.sentiment === 'negative');
-      
-      logger.info('Generating LLM summary...');
-      if (reviews.length > 0) {
-        llmSummary = await getLLMSummary(positive, neutral, negative);
-      } else {
-        llmSummary = 'No reviews available. Scraping may have failed or returned no results.';
-      }
     }
     
-    // Prepare response data
-    const positive = reviews.filter(r => r.sentiment === 'positive');
-    const neutral = reviews.filter(r => r.sentiment === 'neutral');
-    const negative = reviews.filter(r => r.sentiment === 'negative');
+    // Fetch ALL reviews from database for this company to include in response and generate summary
+    logger.info('Fetching all reviews from database for this company...');
+    const allDbReviews = await COMPANY_REVIEWS.findAll({
+      where: {
+        COMPANY_ID: company_id
+      },
+      order: [['INSERTED_AT', 'DESC']],
+      subQuery: false,
+      raw: true
+    });
     
+    logger.info(`✓ Fetched ${allDbReviews.length} total reviews from database for company ${company_id}`);
+    
+    // Convert DB reviews to response format
+    const allReviews = allDbReviews.map(review => ({
+      text: review.REVIEW_TEXT,
+      sentiment: review.SENTIMENT,
+      polarity: review.POLARITY,
+      reviewer_name: review.REVIEWER_NAME,
+      rating: review.RATING,
+      review_date: review.REVIEW_DATE,
+      collected_at: review.INSERTED_AT ? review.INSERTED_AT.toISOString() : null,
+      platform: getPlatformDisplayName(review.SOURCE),
+      source: review.SOURCE
+    }));
+    
+    logger.info(`Total reviews in database for this company: ${allReviews.length}`);
+    
+    // Generate LLM summary using ALL reviews from database
+    const allPositive = allReviews.filter(r => r.sentiment === 'positive');
+    const allNeutral = allReviews.filter(r => r.sentiment === 'neutral');
+    const allNegative = allReviews.filter(r => r.sentiment === 'negative');
+    
+    logger.info('Generating LLM summary from all reviews in database...');
+    if (allReviews.length > 0) {
+      llmSummary = await getLLMSummary(allPositive, allNeutral, allNegative);
+    } else {
+      llmSummary = 'No reviews available in database.';
+    }
+    
+    // Calculate sentiment counts from all reviews
+    const totalSentimentCounts = {
+      positive: allPositive.length,
+      neutral: allNeutral.length,
+      negative: allNegative.length
+    };
+    
+    // Prepare top reviews from all database reviews
     const topReviews = {
-      positive: positive.slice(0, 5),
-      neutral: neutral.slice(0, 5),
-      negative: negative.slice(0, 5)
+      positive: allPositive.slice(0, 5),
+      neutral: allNeutral.slice(0, 5),
+      negative: allNegative.slice(0, 5)
     };
     
     const chartData = [
-      { sentiment: 'positive', count: sentimentCounts.positive },
-      { sentiment: 'neutral', count: sentimentCounts.neutral },
-      { sentiment: 'negative', count: sentimentCounts.negative }
+      { sentiment: 'positive', count: totalSentimentCounts.positive },
+      { sentiment: 'neutral', count: totalSentimentCounts.neutral },
+      { sentiment: 'negative', count: totalSentimentCounts.negative }
     ];
     
     // Calculate metadata - use review_date (when reviews were posted) not collected_at (when scraped)
-    const reviewDates = reviews.map(r => r.review_date).filter(Boolean);
+    const reviewDates = allReviews.map(r => r.review_date).filter(Boolean);
     const earliestCollection = reviewDates.length > 0 ? Math.min(...reviewDates.map(d => new Date(d))) : null;
     const latestCollection = reviewDates.length > 0 ? Math.max(...reviewDates.map(d => new Date(d))) : null;
     
-    // Platform breakdown
+    // Platform breakdown from all reviews
     const platformCounts = {};
-    reviews.forEach(review => {
+    allReviews.forEach(review => {
       const platform = review.platform || 'Unknown';
       platformCounts[platform] = (platformCounts[platform] || 0) + 1;
     });
     
-    // Business insights
-    const negativeReviews = reviews.filter(r => r.sentiment === 'negative');
+    // Business insights from all reviews
+    const negativeReviews = allReviews.filter(r => r.sentiment === 'negative');
     const highPriorityIssues = [];
     const commonNegativeIssues = [];
     
@@ -408,15 +439,17 @@ router.post('/google', async (req, res) => {
   res.json({
       company_id: parseInt(company_id),
       company_name: companyName,
-      sentiment_counts: sentimentCounts,
+      sentiment_counts: totalSentimentCounts, // Use total counts from all DB reviews
       chart_data: chartData,
       top_reviews: topReviews,
       llm_summary: llmSummary,
-      reviews,
+      reviews: allReviews, // All reviews from database
+      newly_scraped_reviews: reviews, // Just the reviews from this scrape
       source: 'google',
       analysis_metadata: {
         analyzed_at: new Date().toISOString(),
-        total_reviews: reviews.length,
+        total_reviews: allReviews.length, // Total from database
+        newly_scraped_count: reviews.length, // Count from this scrape
         platforms: platformCounts,
         primary_platform: getPlatformDisplayName('GOOGLE'),
   business_type: businessType,

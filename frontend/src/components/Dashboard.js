@@ -62,6 +62,15 @@ export default function Dashboard() {
     }
   };
 
+  const formatDateOnly = (timestamp) => {
+    if (!timestamp) return "N/A";
+    try {
+      return new Date(timestamp).toLocaleDateString();
+    } catch {
+      return timestamp;
+    }
+  };
+
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
@@ -251,8 +260,16 @@ export default function Dashboard() {
                       <Typography variant="body1">{formatTimestamp(analysisMetadata.analyzed_at)}</Typography>
                     </Box>
                     <Box>
-                      <Typography variant="body2" color="textSecondary">Total Reviews:</Typography>
-                      <Typography variant="body1">{analysisMetadata.total_reviews}</Typography>
+                      <Typography variant="body2" color="textSecondary">Total Reviews in Database:</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                        {analysisMetadata.total_reviews}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="body2" color="textSecondary">Newly Scraped This Session:</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 'bold', color: '#f57c00' }}>
+                        {analysisMetadata.newly_scraped_count || 0}
+                      </Typography>
                     </Box>
                     {analysisMetadata.platforms && Object.keys(analysisMetadata.platforms).length > 0 && (
                       <Box>
@@ -276,20 +293,13 @@ export default function Dashboard() {
                         </Box>
                       </Box>
                     )}
-                    <Box>
-                      <Typography variant="body2" color="textSecondary">Data Source:</Typography>
-                      <Typography variant="body1">
-                        {analysisMetadata.using_cached_data ? "Recent Cache" : "Fresh Scrape"} 
-                        {analysisMetadata.using_cached_data && <span style={{color: '#4caf50'}}> ✓</span>}
-                      </Typography>
-                    </Box>
                     {analysisMetadata.collection_period && (analysisMetadata.collection_period.earliest || analysisMetadata.collection_period.latest) && (
                       <Box>
                         <Typography variant="body2" color="textSecondary">Collection Period:</Typography>
                         <Typography variant="body1" sx={{ fontSize: '0.9rem' }}>
-                          {analysisMetadata.collection_period.earliest && formatTimestamp(analysisMetadata.collection_period.earliest)}
+                          {analysisMetadata.collection_period.earliest && formatDateOnly(analysisMetadata.collection_period.earliest)}
                           {analysisMetadata.collection_period.earliest && analysisMetadata.collection_period.latest && " - "}
-                          {analysisMetadata.collection_period.latest && analysisMetadata.collection_period.latest !== analysisMetadata.collection_period.earliest && formatTimestamp(analysisMetadata.collection_period.latest)}
+                          {analysisMetadata.collection_period.latest && analysisMetadata.collection_period.latest !== analysisMetadata.collection_period.earliest && formatDateOnly(analysisMetadata.collection_period.latest)}
                         </Typography>
                       </Box>
                     )}
