@@ -90,7 +90,15 @@ router.post('/add-llm-provider', async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     logger.error('Error adding LLM provider:', error);
-    res.status(500).json({ error: error.message });
+    let errorMsg = 'Failed to save AI provider configuration. ';
+    if (error.message.includes('UNIQUE constraint failed')) {
+      errorMsg += 'This provider already exists for your account.';
+    } else if (error.message.includes('Connection')) {
+      errorMsg += 'Database connection error. Please try again.';
+    } else {
+      errorMsg += 'Please try again.';
+    }
+    res.status(500).json({ error: errorMsg });
   }
 });
 
@@ -127,7 +135,13 @@ router.get('/llm-details', async (req, res) => {
     
   } catch (error) {
     logger.error('Error fetching LLM details:', error);
-    res.status(500).json({ error: error.message });
+    let errorMsg = 'Failed to fetch AI provider details. ';
+    if (error.message.includes('Connection')) {
+      errorMsg += 'Database connection error. Please try again.';
+    } else {
+      errorMsg += 'Please try again.';
+    }
+    res.status(500).json({ error: errorMsg });
   }
 });
 
@@ -181,7 +195,13 @@ router.post('/toggle-llm-status', async (req, res) => {
   } catch (error) {
     await transaction.rollback();
     logger.error('Error toggling LLM status:', error);
-    res.status(500).json({ error: error.message });
+    let errorMsg = 'Failed to update AI provider status. ';
+    if (error.message.includes('Connection')) {
+      errorMsg += 'Database connection error. Please try again.';
+    } else {
+      errorMsg += 'Please try again.';
+    }
+    res.status(500).json({ error: errorMsg });
   }
 });
 

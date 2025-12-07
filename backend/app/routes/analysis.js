@@ -2,12 +2,19 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { KF_VENDOR, COMPANY_REVIEWS, sequelize } = require('../models');
 const { getGoogleReviews, getGoogleTotalReviewCount } = require('../scrapers/google');
-const { analyzeSentiment } = require('../nlp/sentiment');
+const { analyzeSentiment, analyzeSentimentWithLLM } = require('../nlp/sentiment');
 const { getLLMSummary, generateLLMResponseForReview, detectBusinessTypeWithLLM } = require('../services/llm');
 const { analyzeReviewForResponse } = require('../response_generator');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+
+/**
+ * SCRAPING BEHAVIOR:
+ * - If review_count is a specific number (e.g., 10, 50): Always scrape that exact number of FRESH reviews
+ * - If review_count is "all": Scrape only the gap between DB and Google's total available reviews
+ * - Summary generation: ALWAYS uses ALL reviews in the database (including newly scraped ones)
+ */
 
 /**
  * Get recent reviews for a company
@@ -123,18 +130,8 @@ function enrichReviewWithSuggestions(entry, companyName, companyDescription, bus
     const suggested = analysis?.response_templates?.[0] || '';
     const actions = toTimeframedRecommendations(analysis?.recommended_actions || []);
     
-    // Personalize the suggested response with reviewer name
-    let personalizedResponse = suggested;
-    if (entry.reviewer_name && entry.reviewer_name.trim()) {
-      // Add reviewer name to the response
-      if (entry.sentiment === 'negative') {
-        personalizedResponse = `Hi ${entry.reviewer_name},\n\n${suggested}`;
-      } else if (entry.sentiment === 'positive') {
-        personalizedResponse = `Hi ${entry.reviewer_name},\n\n${suggested}`;
-      } else {
-        personalizedResponse = `Hi ${entry.reviewer_name},\n\n${suggested}`;
-      }
-    }
+    // The suggested response is already personalized with reviewer name in response_generator.js
+    const personalizedResponse = suggested;
     
     return {
       ...entry,
@@ -208,39 +205,67 @@ router.post('/google', async (req, res) => {
     
     logger.info(`Found company: ${companyName}`);
     
+    // Parse user's requested review count FIRST
+    const useAllReviews = review_count === 'all';
+    let userRequestedCount = null;
+    if (forceRefresh) {
+      // Force refresh: always set to 50 reviews
+      userRequestedCount = 50;
+      logger.info(`🔄 Force refresh enabled - will scrape 50 reviews`);
+    } else if (!useAllReviews && review_count) {
+      const parsedCount = parseInt(review_count, 10);
+      if (!isNaN(parsedCount) && parsedCount > 0) {
+        userRequestedCount = parsedCount;
+        logger.info(`👤 User ${userId} requested ${userRequestedCount} reviews for analysis`);
+      } else {
+        logger.warn(`⚠️ Invalid review_count: ${review_count}. Will use default behavior.`);
+      }
+    } else if (useAllReviews) {
+      logger.info(`👤 User ${userId} requested ALL reviews for analysis`);
+    }
+    
+    // Quick check: if user requested specific count, check if we have enough reviews already
+    const existingReviewsCountQuick = await COMPANY_REVIEWS.count({
+      where: {
+        COMPANY_ID: company_id,
+        SOURCE: 'GOOGLE'
+      }
+    });
+    
     // Detect business type - try LLM first, fallback to local detection
     const companyDescription = company.VEND_DESC || '';
     let businessType = 'general';
     
-    // Try LLM detection with a few sample reviews for context
-    const sampleReviews = await COMPANY_REVIEWS.findAll({
-      where: { COMPANY_ID: company_id },
-      limit: 5,
-      order: [['INSERTED_AT', 'DESC']],
-      raw: true
-    }).catch(() => []);
-    
-    const llmBusinessType = await detectBusinessTypeWithLLM(companyName, companyDescription, sampleReviews, userId, firmId);
-    if (llmBusinessType) {
-      businessType = llmBusinessType;
-      logger.info(`✅ LLM detected business type: ${businessType}`);
-    } else {
-      // Fallback to local detection
+    // OPTIMIZATION: Skip LLM business type detection if we have enough cached reviews
+    // This saves 30+ seconds when user requests fewer reviews than we have in DB
+    if (!forceRefresh && userRequestedCount && existingReviewsCountQuick >= userRequestedCount) {
+      logger.info(`⚡ Fast path: Skipping LLM business type detection (have ${existingReviewsCountQuick} reviews, need ${userRequestedCount})`);
       businessType = detectBusinessType(companyName, companyDescription);
       logger.info(`Local detected business type: ${businessType}`);
+    } else {
+      // Try LLM detection with a few sample reviews for context
+      const sampleReviews = await COMPANY_REVIEWS.findAll({
+        where: { COMPANY_ID: company_id },
+        limit: 5,
+        order: [['INSERTED_AT', 'DESC']],
+        raw: true
+      }).catch(() => []);
+      
+      logger.info(`🤖 Calling detectBusinessTypeWithLLM for company: ${companyName}...`);
+      const llmBusinessType = await detectBusinessTypeWithLLM(companyName, companyDescription, sampleReviews, userId, firmId);
+      logger.info(`🤖 detectBusinessTypeWithLLM completed. Result: ${llmBusinessType || 'null'}`);
+      if (llmBusinessType) {
+        businessType = llmBusinessType;
+        logger.info(`✅ LLM detected business type: ${businessType}`);
+      } else {
+        // Fallback to local detection
+        logger.info(`⚠️  LLM detection returned null, using local detection...`);
+        businessType = detectBusinessType(companyName, companyDescription);
+        logger.info(`Local detected business type: ${businessType}`);
+      }
     }
     
     logger.info(`Final business type: ${businessType}`);
-    
-    // Parse user's requested review count
-    const useAllReviews = review_count === 'all';
-    let userRequestedCount = null;
-    if (!useAllReviews && review_count) {
-      userRequestedCount = parseInt(review_count, 10);
-      logger.info(`👤 User ${userId} requested ${userRequestedCount} reviews for analysis`);
-    } else if (useAllReviews) {
-      logger.info(`👤 User ${userId} requested ALL reviews for analysis`);
-    }
     
     let reviews = [];
     let sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
@@ -262,8 +287,13 @@ router.post('/google', async (req, res) => {
     let targetReviewCount = useAllReviews ? Infinity : (userRequestedCount || existingReviewsCount);
     let googleTotalReviews = null; // Track total reviews available on Google
 
+    // NEW LOGIC: If user requested a specific number (not "all"), always scrape fresh reviews
     if (forceRefresh) {
-      logger.info(`🔄 Force refresh enabled - will scrape for new reviews`);
+      logger.info(`🔄 Force refresh enabled - will scrape top 50 reviews for new/updated reviews`);
+      needsScraping = true;
+      targetReviewCount = 50; // Always scrape top 50 for refresh
+    } else if (userRequestedCount && !useAllReviews) {
+      logger.info(`🔄 User requested ${userRequestedCount} specific reviews - will scrape fresh data`);
       needsScraping = true;
     } else if (useAllReviews) {
       // For "all" requests, check if we already know the total from Google
@@ -304,7 +334,11 @@ router.post('/google', async (req, res) => {
     }
 
     // Scrape if needed
+    logger.info(`🔍 Scraping decision: needsScraping=${needsScraping}`);
+    logger.info(`🔍 About to check if statement: needsScraping=${needsScraping}, type=${typeof needsScraping}`);
     if (needsScraping) {
+      logger.info(`🚀 Starting scraping process...`);
+      logger.info(`⏱️  About to enter scraping logic...`);
       if (companyAddress && companyAddress.trim()) {
         logger.info(`Company address: ${companyAddress}`);
         logger.info(`Scraping Google reviews for '${companyName}' at '${companyAddress}'...`);
@@ -338,15 +372,23 @@ router.post('/google', async (req, res) => {
       if (needsScraping) {
         // Calculate how many reviews to scrape to meet target
         let reviewsNeeded;
-        if (useAllReviews && googleTotalFromScraper) {
+        if (forceRefresh) {
+          // For force refresh, always scrape 50 reviews to catch new/updated ones
+          reviewsNeeded = 50;
+          logger.info(`📊 Force refresh mode: Scraping top 50 reviews to catch new/updated reviews`);
+        } else if (useAllReviews && googleTotalFromScraper) {
           // For "all" requests, only scrape the gap
           reviewsNeeded = Math.max(googleTotalFromScraper - existingReviewsCount, 1);
           logger.info(`📊 Gap-fill mode: Need ${reviewsNeeded} reviews to reach Google total of ${googleTotalFromScraper}`);
+        } else if (userRequestedCount && !useAllReviews) {
+          // For specific count requests, scrape exactly that number (fresh data)
+          reviewsNeeded = userRequestedCount;
+          logger.info(`📊 User requested ${userRequestedCount} specific reviews - will scrape exactly ${reviewsNeeded} fresh reviews`);
         } else {
-          // For specific count requests
+          // Default: scrape the gap
           reviewsNeeded = targetReviewCount - existingReviewsCount;
         }
-        const scrapeLimit = Math.max(reviewsNeeded, 1); // Scrape exactly what's needed
+        const scrapeLimit = forceRefresh ? 50 : Math.max(reviewsNeeded, 1); // Force 50 for refresh, otherwise scrape what's needed
         logger.info(`🎯 Target review count: ${useAllReviews ? 'ALL' : targetReviewCount}, Existing: ${existingReviewsCount}, Will scrape: ${scrapeLimit} reviews`);
         
         // Scrape reviews
@@ -394,12 +436,12 @@ router.post('/google', async (req, res) => {
         }
       } catch (error) {
         logger.error('Scraping failed:', error);
-        // Don’t fail the entire request; continue with empty reviews and report the error in metadata
+        // Don't fail the entire request; continue with empty reviews and report the error in metadata
         rawReviews = [];
         scrapeError = error?.message || 'Unknown scraping error';
       }
       
-  logger.info(`${rawReviews.length} reviews scraped. Analyzing sentiment...`);
+      logger.info(`${rawReviews.length} reviews scraped. Analyzing sentiment...`);
       
       // Process each review
       const reviewsToInsert = [];
@@ -415,9 +457,9 @@ router.post('/google', async (req, res) => {
           continue; // Skip empty reviews
         }
         
-        // Analyze sentiment (considering both text and rating)
-        const sentimentResult = analyzeSentiment(text, rating);
-        logger.debug(`📝 Review sentiment: ${sentimentResult.sentiment} (polarity=${sentimentResult.polarity}, rating=${rating})`);
+        // Analyze sentiment using LLM (considering text, rating, and business type)
+        const sentimentResult = await analyzeSentimentWithLLM(text, rating, businessType, userId, firmId);
+        logger.debug(`📝 Review sentiment: ${sentimentResult.sentiment} (polarity=${sentimentResult.polarity}, rating=${rating}, confidence=${sentimentResult.confidence})`);
         
         let reviewEntry = {
           text,
@@ -540,16 +582,23 @@ router.post('/google', async (req, res) => {
       newReviewsAdded = reviewsToInsert.length;
       logger.info(`✅ Scraped and added ${newReviewsAdded} new reviews to database`);
     } else {
+      logger.info(`⏭️  Skipping scraping block (needsScraping=false)`);
       logger.info(`✓ Database has sufficient reviews (${existingReviewsCount} >= ${targetReviewCount || 'all'}). No scraping needed.`);
     }
+    
+    logger.info(`✅ Scraping phase completed. Moving to database fetch...`);
+    
+    logger.info(`📥 Starting database fetch phase...`);
+    logger.info(`📊 Fetch parameters: useAllReviews=${useAllReviews}, userRequestedCount=${userRequestedCount}, existingReviewsCount=${existingReviewsCount}`);
     
     // Fetch reviews from database - separate logic for ALL vs SPECIFIC count
     let allDbReviews;
     
     if (useAllReviews) {
       // Path 1: User requested ALL reviews - fetch everything
-      logger.info(`📥 Fetching ALL reviews from database for company ${company_id}...`);
+      logger.info(`📥 PATH 1: Fetching ALL reviews from database for company ${company_id}...`);
       try {
+        logger.info(`🔍 Executing COMPANY_REVIEWS.findAll query (no limit)...`);
         allDbReviews = await COMPANY_REVIEWS.findAll({
           where: {
             COMPANY_ID: company_id,
@@ -565,17 +614,41 @@ router.post('/google', async (req, res) => {
         logger.error(`❌ Error fetching ALL reviews: ${error.message}`);
         throw error;
       }
-    } else if (userRequestedCount && userRequestedCount > 0) {
-      // Path 2: User requested SPECIFIC number of reviews
-      logger.info(`📥 Fetching ${userRequestedCount} most recent reviews from database for company ${company_id}...`);
+    } else if (userRequestedCount && userRequestedCount > 0 && userRequestedCount < existingReviewsCount) {
+      // Path 2A: User requested SPECIFIC count that is LESS than DB available
+      // In this case, return ALL available reviews instead
+      logger.info(`📥 PATH 2A: User requested ${userRequestedCount} reviews but DB has ${existingReviewsCount} available`);
+      logger.info(`📥 Fetching ALL ${existingReviewsCount} reviews from database for comprehensive analysis...`);
       try {
+        logger.info(`🔍 Executing COMPANY_REVIEWS.findAll query (no limit - returning all)...`);
         allDbReviews = await COMPANY_REVIEWS.findAll({
           where: {
             COMPANY_ID: company_id,
             SOURCE: 'GOOGLE'
           },
           order: [['INSERTED_AT', 'DESC']],
-          limit: userRequestedCount,  // Apply specific limit
+          subQuery: false,
+          raw: true
+          // NO LIMIT - fetch all available since request was less than available
+        });
+        logger.info(`✅ Fetched all ${allDbReviews.length} available reviews (user requested: ${userRequestedCount}, returning all for better summary)`);
+      } catch (error) {
+        logger.error(`❌ Error fetching all reviews: ${error.message}`);
+        throw error;
+      }
+    } else if (userRequestedCount && userRequestedCount > 0) {
+      // Path 2B: User requested SPECIFIC count that is >= DB available
+      // Fetch what was requested (which is all or more than available)
+      logger.info(`📥 PATH 2B: Fetching ${userRequestedCount} reviews from database for company ${company_id}...`);
+      try {
+        logger.info(`🔍 Executing COMPANY_REVIEWS.findAll query (limit: ${userRequestedCount})...`);
+        allDbReviews = await COMPANY_REVIEWS.findAll({
+          where: {
+            COMPANY_ID: company_id,
+            SOURCE: 'GOOGLE'
+          },
+          order: [['INSERTED_AT', 'DESC']],
+          limit: userRequestedCount,
           subQuery: false,
           raw: true
         });
@@ -586,8 +659,9 @@ router.post('/google', async (req, res) => {
       }
     } else {
       // Path 3: Default - fetch all available reviews
-      logger.info(`📥 Fetching all available reviews from database for company ${company_id} (no specific limit)...`);
+      logger.info(`📥 PATH 3: Fetching all available reviews from database for company ${company_id} (no specific limit)...`);
       try {
+        logger.info(`🔍 Executing COMPANY_REVIEWS.findAll query (default - no limit)...`);
         allDbReviews = await COMPANY_REVIEWS.findAll({
           where: {
             COMPANY_ID: company_id,
@@ -604,20 +678,29 @@ router.post('/google', async (req, res) => {
       }
     }
     
-    // Convert DB reviews to response format
-    const allReviews = allDbReviews.map(review => ({
-      text: review.REVIEW_TEXT,
-      sentiment: review.SENTIMENT,
-      polarity: review.POLARITY,
-      reviewer_name: review.REVIEWER_NAME,
-      rating: review.RATING,
-      review_date: review.REVIEW_DATE,
-      collected_at: review.INSERTED_AT ? review.INSERTED_AT.toISOString() : null,
-      platform: getPlatformDisplayName(review.SOURCE),
-      source: review.SOURCE
-    }));
+    logger.info(`✅ Database query completed. Retrieved ${allDbReviews.length} reviews`);
+    logger.info(`🔄 Converting DB reviews to response format and enriching with suggestions...`);
+    
+    // Convert DB reviews to response format and enrich with suggestions
+    const allReviews = allDbReviews.map(review => {
+      const reviewEntry = {
+        text: review.REVIEW_TEXT,
+        sentiment: review.SENTIMENT,
+        polarity: review.POLARITY,
+        reviewer_name: review.REVIEWER_NAME,
+        rating: review.RATING,
+        review_date: review.REVIEW_DATE,
+        collected_at: review.INSERTED_AT ? review.INSERTED_AT.toISOString() : null,
+        platform: getPlatformDisplayName(review.SOURCE),
+        source: review.SOURCE
+      };
+      
+      // Enrich each review with response suggestions and action recommendations
+      return enrichReviewWithSuggestions(reviewEntry, companyName, companyDescription, businessType);
+    });
     
     logger.info(`✅ Final review count for user ${userId}: ${allReviews.length} reviews`);
+    logger.info(`🤖 Preparing LLM summary phase...`);
     
     // Prepare reviews for LLM summary - use what was fetched
     const reviewsForSummary = allReviews;
@@ -634,10 +717,12 @@ router.post('/google', async (req, res) => {
     const allNegative = reviewsForSummary.filter(r => r.sentiment === 'negative');
     
     logger.info(`Review sentiment breakdown for user ${userId}: ${allPositive.length} positive, ${allNeutral.length} neutral, ${allNegative.length} negative`);
-    logger.info('Generating LLM summary from reviews...');
+    logger.info(`🤖 Calling getLLMSummary with ${reviewsForSummary.length} reviews...`);
     if (reviewsForSummary.length > 0) {
       llmSummary = await getLLMSummary(allPositive, allNeutral, allNegative, userId, firmId);
+      logger.info(`✅ LLM summary generated (length: ${llmSummary.length} chars)`);
       
+      logger.info(`📬 Sending LLM summary notification...`);
       // Send LLM summary as notification to MOB_NOTIFICATIONS
       const summaryPreview = llmSummary.substring(0, 255); // Store first 255 chars as preview
       await insertNotification(
@@ -649,7 +734,10 @@ router.post('/google', async (req, res) => {
       );
     } else {
       llmSummary = 'No reviews available in database.';
+      logger.info(`⚠️  No reviews available for LLM summary`);
     }
+    
+    logger.info(`📊 Calculating final statistics and preparing response...`);
     
     // Calculate sentiment counts from all reviews
     const totalSentimentCounts = {
@@ -688,10 +776,11 @@ router.post('/google', async (req, res) => {
     const highPriorityIssues = [];
     const commonNegativeIssues = [];
     
-    logger.info('Analysis complete. Returning results.');
+    logger.info(`📦 Building final response object...`);
+    logger.info(`✅ Analysis complete. Returning results to client.`);
     logger.info(`✅ Report generated for user_id=${userId}, firm_id=${firmId}, company_id=${company_id}`);
     
-  res.json({
+    res.json({
       company_id: parseInt(company_id),
       company_name: companyName,
       sentiment_counts: totalSentimentCounts, // Use total counts from all DB reviews
@@ -709,8 +798,8 @@ router.post('/google', async (req, res) => {
         newly_scraped_count: reviews.length, // Count from this scrape
         platforms: platformCounts,
         primary_platform: getPlatformDisplayName('GOOGLE'),
-  business_type: businessType,
-  scrape_error: typeof scrapeError !== 'undefined' ? scrapeError : null,
+        business_type: businessType,
+        scrape_error: typeof scrapeError !== 'undefined' ? scrapeError : null,
         collection_period: {
           earliest: earliestCollection ? new Date(earliestCollection).toISOString() : null,
           latest: latestCollection ? new Date(latestCollection).toISOString() : null
@@ -724,8 +813,8 @@ router.post('/google', async (req, res) => {
         }
       }
     });
-    
-  } }catch (error) {
+
+  }} catch (error) {
     logger.error('Error in Google analysis endpoint:', error);
     const sqlState = error?.original?.sqlState || error?.parent?.sqlState;
     const sqlMessage = error?.original?.sqlMessage || error?.parent?.sqlMessage || error?.message;
@@ -771,7 +860,7 @@ router.post('/google', async (req, res) => {
 
     res.status(500).json({
       error: 'Internal server error',
-      message: error.message
+      message: 'An unexpected error occurred while processing your request. Please try again. If the issue persists, please contact support.'
     });
   }
 });

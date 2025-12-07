@@ -76,6 +76,39 @@ export default function Dashboard() {
     }
   };
 
+  // Escape HTML to prevent injection
+  const escapeHtml = (text) =>
+    text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  // Clean and style LLM summary: strip markdown markers and bold known headings
+  const formatLlmSummary = (summary) => {
+    if (!summary) return "";
+
+    const cleaned = summary
+      .replace(/^#{1,6}\s*/gm, "") // remove heading hashes
+      .replace(/\*+/g, "") // remove emphasis markers
+      .trim();
+
+    const headingPattern = /^(EXECUTIVE SUMMARY|REPUTATION TIMELINE|POSITIVE THEMES|NEGATIVE THEMES|NEUTRAL THEMES|RECOMMENDATIONS|AREAS FOR IMPROVEMENT|STRENGTHS)\b/i;
+
+    const lines = cleaned.split(/\r?\n/).map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return "";
+      if (headingPattern.test(trimmed)) {
+        return `<strong>${escapeHtml(trimmed)}</strong>`;
+      }
+      return escapeHtml(trimmed);
+    });
+
+    // Preserve line breaks
+    return lines.join("<br>");
+  };
+
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
@@ -284,7 +317,7 @@ export default function Dashboard() {
         {/* Status notices for cache/refresh and backend warnings */}
         {analysisMetadata?.using_cached_data && (
           <Alert severity="success" sx={{ mb: 2 }}>
-            Loaded recent cached reviews. Click "Refresh Reviews" to force a fresh scrape.
+            Loaded recent cached reviews.
           </Alert>
         )}
         {analysisMetadata?.scrape_error && (
@@ -316,20 +349,6 @@ export default function Dashboard() {
                 </span>
               )}
             </Box>
-            <Button
-              variant="contained"
-              onClick={() => handleSearch(analysisResult?.company_id || null, true)}
-              disabled={loading || !analysisResult?.company_id}
-              sx={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                fontWeight: 600,
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #5568d3 0%, #653a8b 100%)',
-                }
-              }}
-            >
-              Refresh Reviews
-            </Button>
           </Box>
         )}
         {error && <Alert severity={error === "No reviews found for this company." ? "info" : "error"} sx={{ mt: 2 }}>{error}</Alert>}
@@ -423,7 +442,12 @@ export default function Dashboard() {
                     <Box mb={4}>
                       <Typography variant="h5" gutterBottom>Summary</Typography>
                       <Paper variant="outlined" sx={{ p: 2, background: '#f9f9f9' }}>
-                        <Typography variant="body1" style={{ whiteSpace: 'pre-line' }}>{llmSummary.replace(/\*+/g, '')}</Typography>
+                        <Typography
+                          variant="body1"
+                          component="div"
+                          sx={{ whiteSpace: 'pre-line' }}
+                          dangerouslySetInnerHTML={{ __html: formatLlmSummary(llmSummary) }}
+                        />
                       </Paper>
                     </Box>
                   )}

@@ -222,59 +222,9 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
           </Accordion>
         )}
         
-        {/* Quick Response Options */}
-        {review.response_suggestion && (
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 1, 
-            my: 2, 
-            flexWrap: 'wrap',
-            p: 2,
-            backgroundColor: '#f0f7ff',
-            borderRadius: 1,
-            border: '1px solid #90caf9'
-          }}>
-            <Typography variant="body2" sx={{ width: '100%', mb: 1, fontWeight: 600 }}>
-              Quick Actions:
-            </Typography>
-            <Button
-              size="small"
-              variant="contained"
-              color="success"
-              onClick={() => {
-                setSelectedReplyOption('suggested');
-                handleResponseDialog(true);
-              }}
-            >
-              ✨ Use Suggested
-            </Button>
-            <Button
-              size="small"
-              variant="contained"
-              color="primary"
-              onClick={() => {
-                setSelectedReplyOption('custom');
-                handleResponseDialog(true);
-              }}
-            >
-              ✍️ Write Custom
-            </Button>
-            <Button
-              size="small"
-              variant="outlined"
-              color="error"
-              onClick={() => {
-                setSelectedReplyOption('none');
-                handleResponseDialog(true);
-              }}
-            >
-              🚫 Skip Reply
-            </Button>
-          </Box>
-        )}
 
         {/* Action Recommendations */}
-        {review.action_recommendations && (
+        {review.action_recommendations && Object.entries(review.action_recommendations).some(([_, actions]) => actions && actions.length > 0) && (
           <Accordion 
             expanded={expandedPanels.recommendations}
             onChange={handlePanelChange('recommendations')}
@@ -287,7 +237,9 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
             </AccordionSummary>
             <AccordionDetails>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {Object.entries(review.action_recommendations).map(([timeframe, actions]) => (
+                {Object.entries(review.action_recommendations)
+                  .filter(([_, actions]) => actions && actions.length > 0)
+                  .map(([timeframe, actions], idx, arr) => (
                   <Box key={timeframe}>
                     <Typography variant="subtitle1" color="primary" sx={{ mb: 1, display: 'flex', alignItems: 'center' }}>
                       {timeframe === 'immediate' && <WarningIcon sx={{ mr: 1, fontSize: 20 }} />}
@@ -307,7 +259,7 @@ const ReviewResponseManager = ({ review, onResponseSent }) => {
                         </ListItem>
                       ))}
                     </List>
-                    {timeframe !== 'long_term' && <Divider sx={{ my: 1 }} />}
+                    {idx < arr.length - 1 && <Divider sx={{ my: 1 }} />}
                   </Box>
                 ))}
               </Box>

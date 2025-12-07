@@ -139,12 +139,24 @@ async function getLLMSummary(positive, neutral, negative, userId = 1481, firmId 
   } catch (error) {
     logger.error('Error generating LLM summary:', error);
     
-    let errorDetail = '';
-    if (error.response?.data) {
-      errorDetail = ` - ${JSON.stringify(error.response.data)}`;
+    // Parse error type for user-friendly messaging
+    let userMessage = '';
+    
+    if (error.response?.status === 429) {
+      userMessage = 'The AI service is currently experiencing high demand (rate limit exceeded). Please try again in a few moments, or upgrade your AI provider plan for higher limits.';
+    } else if (error.response?.status === 401 || error.response?.status === 403) {
+      userMessage = 'Your AI provider authentication failed. Please verify your API key in the AI Settings and try again.';
+    } else if (error.response?.status >= 500) {
+      userMessage = 'The AI service is temporarily unavailable. Please try again in a few moments.';
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      userMessage = 'The AI service request timed out. The service may be slow or unavailable. Please try again.';
+    } else if (error.message?.includes('ERR_INVALID_ARG_TYPE')) {
+      userMessage = 'Configuration error with the AI provider. Please check your API key and provider settings.';
+    } else {
+      userMessage = 'We encountered an issue while generating the summary. Please try again, and if the problem persists, verify your AI Settings.';
     }
     
-    return `AI summary failed: ${error.message}${errorDetail}. Please check your API key configuration in the API manager.`;
+    return userMessage;
   }
 }
 
